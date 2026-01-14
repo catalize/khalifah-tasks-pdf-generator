@@ -1,13 +1,11 @@
 steps:
-  # 1. Build the container image
+  # ... your existing build steps ...
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', '$_LOCATION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/$_IMAGE_NAME:$COMMIT_SHA', '.']
 
-  # 2. Push the image to Artifact Registry
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', '$_LOCATION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/$_IMAGE_NAME:$COMMIT_SHA']
 
-  # 3. Update the Cloud Run Job to use the new image
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -20,5 +18,6 @@ steps:
       - '--region'
       - '$_LOCATION'
 
-images:
-  - '$_LOCATION-docker.pkg.dev/$PROJECT_ID/$_REPO_NAME/$_IMAGE_NAME:$COMMIT_SHA'
+# ADD THESE LINES AT THE VERY BOTTOM:
+options:
+  logging: CLOUD_LOGGING_ONLY
