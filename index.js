@@ -13,7 +13,9 @@ async function generatePDF() {
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
                 '--disable-dev-shm-usage',
-                '--disable-gpu'
+                '--disable-gpu',
+                '--no-zygote',          // Helps prevent zombie processes
+                '--single-process',     // Crucial for low-resource environments
             ]
         });
 
@@ -23,11 +25,14 @@ async function generatePDF() {
         // Optional: Set a timeout for the navigation to prevent infinite hanging
         page.setDefaultNavigationTimeout(60000); // 60 seconds
 
-        const targetUrl = 'https://google.com'; // Change this to your target website
+        const targetUrl = 'https://developer.chrome.com/'; // Change this to your target website
         console.log(`Navigating to: ${targetUrl}`);
         
         // waitUntil: 'networkidle2' is great for waiting until images/scripts are loaded
         await page.goto(targetUrl, { waitUntil: 'networkidle2' });
+
+        // Set screen size.
+        await page.setViewport({width: 1080, height: 1024});
 
         console.log("Page loaded. Generating PDF...");
         const pdfPath = '/tmp/report.pdf'; // /tmp is the writable folder in Cloud Run
