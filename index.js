@@ -119,6 +119,7 @@ async function run() {
                 }, {
                     headers: { 
                         'X-Internal-Secret': internalSecret,
+                        'ngrok-skip-browser-warning': 'true',
                         'Content-Type': 'application/json'
                     }
                 });
