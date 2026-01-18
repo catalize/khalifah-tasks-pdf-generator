@@ -34,12 +34,13 @@ async function run() {
                 const bucketName = parts.shift();
                 const fileName = parts.join('/');
 
-                console.log(`Intercepting GS Image: ${fileName}`);
                 const [buffer] = await storage.bucket(bucketName).file(fileName).download();
 
                 // Auto-detect MIME type based on extension
                 const ext = fileName.split('.').pop().toLowerCase();
                 const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
+
+                console.log(`Loaded: ${fileName} (${buffer.length} bytes)`);
 
                 request.respond({
                     status: 200,
@@ -60,6 +61,21 @@ async function run() {
         console.log(`Downloading HTML: ${inputHtmlPath}`);
         const [content] = await storage.bucket(bucketName).file(inputHtmlPath).download();
         await page.setContent(content.toString(), { waitUntil: 'networkidle0' });
+
+        // This ensures Puppeteer doesn't "skip" the PDF generation
+        await page.evaluate(async () => {
+            const selectors = Array.from(document.querySelectorAll('img'));
+            await Promise.all(selectors.map(img => {
+                if (img.complete) return;
+                return new Promise((resolve, reject) => {
+                    img.onload = resolve;
+                    img.onerror = resolve; // Continue even if one image fails
+                });
+            }));
+        });
+
+        // Extra safety for 1,000 images
+        await new Promise(r => setTimeout(r, 120000));
 
         const pdfPath = `/tmp/report_${userId}.pdf`;
         await page.pdf({ path: pdfPath, format: 'A4', printBackground: true });
