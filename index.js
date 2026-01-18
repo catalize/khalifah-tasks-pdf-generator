@@ -30,24 +30,26 @@ async function run() {
 
             if (url.startsWith('gs://')) {
                 try {
-                    // Parse the GS URL (gs://bucket/path/to/file.jpg)
-                    const parts = url.replace('gs://', '').split('/');
-                    const bucketName = parts.shift();
-                    const fileName = parts.join('/');
+                const parts = url.replace('gs://', '').split('/');
+                const bucketName = parts.shift();
+                const fileName = parts.join('/');
 
-                    // Fetch the image buffer directly using the Service Account
-                    const [buffer] = await storage.bucket(bucketName).file(fileName).download();
+                console.log(`Intercepting GS Image: ${fileName}`);
+                const [buffer] = await storage.bucket(bucketName).file(fileName).download();
 
-                    // Respond to the browser with the raw data
-                    request.respond({
-                        status: 200,
-                        contentType: 'image/jpeg', // Or detect dynamically
-                        body: buffer
-                    });
-                } catch (err) {
-                    console.error(`Failed to fetch GS image: ${url}`, err);
-                    request.abort();
-                }
+                // Auto-detect MIME type based on extension
+                const ext = fileName.split('.').pop().toLowerCase();
+                const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
+
+                request.respond({
+                    status: 200,
+                    contentType: mimeType,
+                    body: buffer
+                });
+            } catch (err) {
+                console.error(`Failed to fetch GS image: ${url}`, err);
+                request.abort();
+            }
             } else {
                 request.continue();
             }
