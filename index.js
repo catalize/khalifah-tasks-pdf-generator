@@ -12,13 +12,18 @@ async function run() {
     const firebaseToken = process.env.FIREBASE_CUSTOM_TOKEN;
     const userId = process.env.USER_ID;
 
+    // --- PROGRESS TRACKING VARIABLES ---
+    let totalImages = 0;
+    let loadedImages = 0;
+    let failedImages = 0;
+
     console.log("Starting PDF generation process...");
 
     let browser;
     try {
         browser = await puppeteer.launch({
             headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--no-zygote', '--single-process']
+            args: ['--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage']
         });
         const page = await browser.newPage();
 
@@ -29,25 +34,29 @@ async function run() {
             const url = request.url();
 
             if (url.startsWith('gs://')) {
+                totalImages++;
                 try {
-                const parts = url.replace('gs://', '').split('/');
-                const bucketName = parts.shift();
-                const fileName = parts.join('/');
+                    const parts = url.replace('gs://', '').split('/');
+                    const bucketName = parts.shift();
+                    const fileName = parts.join('/');
 
-                const [buffer] = await storage.bucket(bucketName).file(fileName).download();
+                    const [buffer] = await storage.bucket(bucketName).file(fileName).download();
 
-                // Auto-detect MIME type based on extension
-                const ext = fileName.split('.').pop().toLowerCase();
-                const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
+                    // Auto-detect MIME type based on extension
+                    const ext = fileName.split('.').pop().toLowerCase();
+                    const mimeType = ext === 'png' ? 'image/png' : 'image/jpeg';
 
-                console.log(`Loaded: ${fileName} (${buffer.length} bytes)`);
+                    loadedImages++;
+                    const percent = Math.round((loadedImages / (totalImages || 1)) * 100);
+                    process.stdout.write(`\r📸 Progress: [${'█'.repeat(percent/10)}${'░'.repeat(10-(percent/10))}] ${loadedImages} Loaded | ${failedImages} Failed`);
 
-                request.respond({
-                    status: 200,
-                    contentType: mimeType,
-                    body: buffer
+                    request.respond({
+                        status: 200,
+                        contentType: mimeType,
+                        body: buffer
                 });
             } catch (err) {
+                failedImages++;
                 console.error(`Failed to fetch GS image: ${url}`, err);
                 request.abort();
             }
