@@ -85,21 +85,21 @@ async function run() {
         console.log(`Downloading HTML: ${inputHtmlPath}`);
         const [content] = await storage.bucket(bucketName).file(inputHtmlPath).download();
         await page.setContent(content.toString(), { 
-            waitUntil: ['networkidle0', 'domcontentloaded'],
+            waitUntil: ['domcontentloaded'],
             timeout: 600000
         });
 
         // This ensures Puppeteer doesn't "skip" the PDF generation
         await page.evaluate(async () => {
-            const selectors = Array.from(document.querySelectorAll('img'));
-            await Promise.all(selectors.map(img => {
-                if (img.complete) return;
-                return new Promise((resolve, reject) => {
+            const images = Array.from(document.querySelectorAll('img'));
+            await Promise.all(images.map(img => {
+                if (img.complete) return Promise.resolve();
+                return new Promise(resolve => {
                     img.onload = resolve;
-                    img.onerror = resolve; // Continue even if one image fails
+                    img.onerror = resolve; // Continue even if one image is broken
                 });
             }));
-        }).catch(err => console.log("Some images failed to load, continuing to PDF..."));;
+        });
 
         // Extra safety for 1,000 images
         await new Promise(r => setTimeout(r, 120000));
