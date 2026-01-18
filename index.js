@@ -127,7 +127,7 @@ async function run() {
         const callbackUrl = process.env.CALLBACK_URL;
         const internalSecret = process.env.INTERNAL_SECRET;
 
-        console.log(`Sending callback with secret: ${internalSecret ? 'Present' : 'MISSING'}`);
+        console.log(`Sending callback to user ${process.env.USER_ID} with secret: ${internalSecret ? 'Present' : 'MISSING'}`);
 
         if (callbackUrl) {
             console.log(`🔗 Notifying Laravel at: ${callbackUrl}`);
