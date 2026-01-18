@@ -6,6 +6,9 @@ async function generatePDF() {
 
     let browser;
     try {
+        console.log("Getting Firebase Access Token...");
+        const firebaseToken = process.env.FIREBASE_CUSTOM_TOKEN;
+
         console.log("Launching browser...");
         browser = await puppeteer.launch({
             headless: true,
@@ -22,17 +25,22 @@ async function generatePDF() {
         console.log("Browser launched successfully. Opening new page...");
         const page = await browser.newPage();
 
-        // Optional: Set a timeout for the navigation to prevent infinite hanging
-        page.setDefaultNavigationTimeout(60000); // 60 seconds
+        // 2. Inject the token into the browser context BEFORE setting content
+        if (firebaseToken) {
+            console.log("Setting Firebase Auth Token in browser context...");
+            await page.evaluateOnNewDocument((token) => {
+                // This allows your HTML's script (if any) to pick up the token
+                localStorage.setItem('firebaseToken', token);
+            }, firebaseToken);
+        }
 
-        const targetUrl = 'https://developer.chrome.com/'; // Change this to your target website
-        console.log(`Navigating to: ${targetUrl}`);
-        
-        // waitUntil: 'networkidle2' is great for waiting until images/scripts are loaded
-        await page.goto(targetUrl, { waitUntil: 'networkidle2' });
-
-        // Set screen size.
-        await page.setViewport({width: 1080, height: 1024});
+        // 3. Set the HTML string we got from GCS
+        // networkidle0 ensures it waits for the Firebase image fetches to finish
+        console.log("Setting the page contents...");
+        await page.setContent(htmlString, { 
+            waitUntil: 'networkidle0',
+            timeout: 60000 
+        });
 
         console.log("Page loaded. Generating PDF...");
         const pdfPath = '/tmp/report.pdf'; // /tmp is the writable folder in Cloud Run
@@ -48,7 +56,18 @@ async function generatePDF() {
         const stats = fs.statSync(pdfPath);
         console.log(`PDF size: ${stats.size} bytes`);
 
-        // FUTURE STEP: Here you will add your Google Drive upload logic
+        // 4. Upload the PDF back to GCS
+        const outputFileName = `results/report_${process.env.USER_ID}_${Date.now()}.pdf`;
+
+        console.log(`Uploading PDF to GCS: ${outputFileName}...`);
+        await storage.bucket(bucketName).upload(pdfPath, {
+            destination: outputFileName,
+            metadata: {
+                contentType: 'application/pdf',
+            },
+        });
+
+        console.log("Upload complete! You can now see the file in the GCP Console.");
 
     } catch (error) {
         console.error("CRITICAL ERROR during PDF generation:", error);
