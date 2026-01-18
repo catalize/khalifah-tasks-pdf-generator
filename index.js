@@ -3,7 +3,7 @@ const { Storage } = require('@google-cloud/storage');
 const axios = require('axios');
 const fs = require('fs');
 
-const storage = new Storage({ keyFilename: './firebase-adminsdk.json' });
+const storage = new Storage({ keyFilename: '/app/secrets/firebase-adminsdk.json' });
 
 async function run() {
     console.log("Initializing variables...");
