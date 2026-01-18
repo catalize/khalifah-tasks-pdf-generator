@@ -90,20 +90,43 @@ async function run() {
         await page.pdf({ path: pdfPath, format: 'A4', printBackground: true });
 
         // UPLOAD PDF BACK TO GCS (or Google Drive)
-        const finalPdfName = `reports/final_${userId}_${Date.now()}.pdf`;
-        await storage.bucket(bucketName).upload(pdfPath, { destination: finalPdfName });
+        const outputGcsPath = process.env.OUTPUT_GCS_PATH; // e.g., temp_reports/report-aachen-2026-01-01...pdf
 
-        console.log(`Success! PDF uploaded to ${finalPdfName}`);
+        if (outputGcsPath) {
+            console.log(`\n📤 Uploading final PDF to: ${outputGcsPath}`);
+            await storage.bucket(bucketName).upload(pdfPath, {
+                destination: outputGcsPath,
+                public: false, // Keep it private
+                metadata: {
+                    contentType: 'application/pdf',
+                }
+            });
 
-        // CALLBACK TO LARAVEL
-        // This triggers the notification system you already have
-        await axios.post('https://khalifah.cloud/api/reports/callback', {
-            user_id: userId,
-            file_name: finalPdfName,
-            status: 'success'
-        }, {
-            headers: { 'Authorization': 'Bearer YOUR_INTERNAL_SECRET_TOKEN' }
-        });
+            console.log(`Success! PDF uploaded to ${outputGcsPath}`);
+        }
+
+        // Update the Callback to send the final path back to Laravel
+        const callbackUrl = process.env.CALLBACK_URL;
+        const internalSecret = process.env.INTERNAL_SECRET;
+
+        if (callbackUrl) {
+            console.log(`🔗 Notifying Laravel at: ${callbackUrl}`);
+            try {
+                await axios.post(callbackUrl, {
+                    user_id: process.env.USER_ID,
+                    file_path: process.env.OUTPUT_GCS_PATH,
+                    status: 'success'
+                }, {
+                    headers: { 
+                        'X-Internal-Secret': internalSecret,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                console.log("✅ Callback successful");
+            } catch (err) {
+                console.error("❌ Callback failed:", err.response?.data || err.message);
+            }
+        }
 
     } catch (error) {
         console.error("CRITICAL ERROR during PDF generation:", error);
