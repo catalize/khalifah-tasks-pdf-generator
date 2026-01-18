@@ -27,12 +27,16 @@ async function run() {
         });
         const page = await browser.newPage();
 
+        // Increase timeout for the whole page session
+        page.setDefaultNavigationTimeout(600000); // 10 minutes
+        page.setDefaultTimeout(600000);
+
         // 1. Enable Request Interception
         await page.setRequestInterception(true);
 
         page.on('request', async (request) => {
             const url = request.url();
-            
+
             // CASE 1: Google Cloud Storage Internal Links
             if (url.startsWith('gs://')) {
                 totalImages++;
@@ -80,7 +84,10 @@ async function run() {
         // The 'content' variable is already declared above, so we reuse it.
         console.log(`Downloading HTML: ${inputHtmlPath}`);
         const [content] = await storage.bucket(bucketName).file(inputHtmlPath).download();
-        await page.setContent(content.toString(), { waitUntil: 'networkidle0' });
+        await page.setContent(content.toString(), { 
+            waitUntil: ['networkidle0', 'domcontentloaded'],
+            timeout: 600000
+        });
 
         // This ensures Puppeteer doesn't "skip" the PDF generation
         await page.evaluate(async () => {
@@ -92,13 +99,13 @@ async function run() {
                     img.onerror = resolve; // Continue even if one image fails
                 });
             }));
-        });
+        }).catch(err => console.log("Some images failed to load, continuing to PDF..."));;
 
         // Extra safety for 1,000 images
         await new Promise(r => setTimeout(r, 120000));
 
         const pdfPath = `/tmp/report_${userId}.pdf`;
-        await page.pdf({ path: pdfPath, format: 'A4', printBackground: true });
+        await page.pdf({ path: pdfPath, format: 'A4', printBackground: true, timeout: 600000 });
 
         // UPLOAD PDF BACK TO GCS (or Google Drive)
         const outputGcsPath = process.env.OUTPUT_GCS_PATH; // e.g., temp_reports/report-aachen-2026-01-01...pdf
