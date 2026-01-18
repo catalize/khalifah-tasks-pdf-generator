@@ -1,73 +1,59 @@
 const puppeteer = require('puppeteer');
+const { Storage } = require('@google-cloud/storage');
+const axios = require('axios');
 const fs = require('fs');
 
-async function generatePDF() {
+const storage = new Storage({ keyFilename: './firebase-adminsdk.json' });
+
+async function run() {
+    console.log("Initializing variables...");
+    const bucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET;
+    const inputHtmlPath = process.env.INPUT_GCS_PATH;
+    const firebaseToken = process.env.FIREBASE_CUSTOM_TOKEN;
+    const userId = process.env.USER_ID;
+
     console.log("Starting PDF generation process...");
 
     let browser;
     try {
-        console.log("Getting Firebase Access Token...");
-        const firebaseToken = process.env.FIREBASE_CUSTOM_TOKEN;
+        console.log(`Downloading HTML: ${inputHtmlPath}`);
+        const [content] = await storage.bucket(bucketName).file(inputHtmlPath).download();
+        const htmlString = content.toString();
 
-        console.log("Launching browser...");
         browser = await puppeteer.launch({
             headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--no-zygote',          // Helps prevent zombie processes
-                '--single-process',     // Crucial for low-resource environments
-            ]
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--no-zygote', '--single-process']
         });
-
-        console.log("Browser launched successfully. Opening new page...");
         const page = await browser.newPage();
 
-        // 2. Inject the token into the browser context BEFORE setting content
+        // Pre-authenticate the browser session with the Custom Token
         if (firebaseToken) {
-            console.log("Setting Firebase Auth Token in browser context...");
             await page.evaluateOnNewDocument((token) => {
-                // This allows your HTML's script (if any) to pick up the token
                 localStorage.setItem('firebaseToken', token);
             }, firebaseToken);
         }
 
-        // 3. Set the HTML string we got from GCS
-        // networkidle0 ensures it waits for the Firebase image fetches to finish
-        console.log("Setting the page contents...");
-        await page.setContent(htmlString, { 
-            waitUntil: 'networkidle0',
-            timeout: 60000 
+        console.log("Rendering PDF...");
+        await page.setContent(htmlString, { waitUntil: 'networkidle0', timeout: 60000 });
+
+        const pdfPath = `/tmp/report_${userId}.pdf`;
+        await page.pdf({ path: pdfPath, format: 'A4', printBackground: true });
+
+        // UPLOAD PDF BACK TO GCS (or Google Drive)
+        const finalPdfName = `reports/final_${userId}_${Date.now()}.pdf`;
+        await storage.bucket(bucketName).upload(pdfPath, { destination: finalPdfName });
+
+        console.log(`Success! PDF uploaded to ${finalPdfName}`);
+
+        // CALLBACK TO LARAVEL
+        // This triggers the notification system you already have
+        await axios.post('https://your-laravel-domain.com/api/reports/callback', {
+            user_id: userId,
+            file_name: finalPdfName,
+            status: 'success'
+        }, {
+            headers: { 'Authorization': 'Bearer YOUR_INTERNAL_SECRET_TOKEN' }
         });
-
-        console.log("Page loaded. Generating PDF...");
-        const pdfPath = '/tmp/report.pdf'; // /tmp is the writable folder in Cloud Run
-        await page.pdf({
-            path: pdfPath,
-            format: 'A4',
-            printBackground: true
-        });
-
-        console.log(`PDF saved locally at: ${pdfPath}`);
-
-        // VERIFICATION: Check file size to ensure it's not empty
-        const stats = fs.statSync(pdfPath);
-        console.log(`PDF size: ${stats.size} bytes`);
-
-        // 4. Upload the PDF back to GCS
-        const outputFileName = `results/report_${process.env.USER_ID}_${Date.now()}.pdf`;
-
-        console.log(`Uploading PDF to GCS: ${outputFileName}...`);
-        await storage.bucket(bucketName).upload(pdfPath, {
-            destination: outputFileName,
-            metadata: {
-                contentType: 'application/pdf',
-            },
-        });
-
-        console.log("Upload complete! You can now see the file in the GCP Console.");
 
     } catch (error) {
         console.error("CRITICAL ERROR during PDF generation:", error);
@@ -82,4 +68,4 @@ async function generatePDF() {
     }
 }
 
-generatePDF();
+run();
