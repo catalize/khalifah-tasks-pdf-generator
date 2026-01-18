@@ -16,25 +16,48 @@ async function run() {
 
     let browser;
     try {
-        console.log(`Downloading HTML: ${inputHtmlPath}`);
-        const [content] = await storage.bucket(bucketName).file(inputHtmlPath).download();
-        const htmlString = content.toString();
-
         browser = await puppeteer.launch({
             headless: true,
             args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--no-zygote', '--single-process']
         });
         const page = await browser.newPage();
 
-        // Pre-authenticate the browser session with the Custom Token
-        if (firebaseToken) {
-            await page.evaluateOnNewDocument((token) => {
-                localStorage.setItem('firebaseToken', token);
-            }, firebaseToken);
-        }
+        // 1. Enable Request Interception
+        await page.setRequestInterception(true);
 
-        console.log("Rendering PDF...");
-        await page.setContent(htmlString, { waitUntil: 'networkidle0', timeout: 60000 });
+        page.on('request', async (request) => {
+            const url = request.url();
+
+            if (url.startsWith('gs://')) {
+                try {
+                    // Parse the GS URL (gs://bucket/path/to/file.jpg)
+                    const parts = url.replace('gs://', '').split('/');
+                    const bucketName = parts.shift();
+                    const fileName = parts.join('/');
+
+                    // Fetch the image buffer directly using the Service Account
+                    const [buffer] = await storage.bucket(bucketName).file(fileName).download();
+
+                    // Respond to the browser with the raw data
+                    request.respond({
+                        status: 200,
+                        contentType: 'image/jpeg', // Or detect dynamically
+                        body: buffer
+                    });
+                } catch (err) {
+                    console.error(`Failed to fetch GS image: ${url}`, err);
+                    request.abort();
+                }
+            } else {
+                request.continue();
+            }
+        });
+
+        // Set the HTML content for the page
+        // The 'content' variable is already declared above, so we reuse it.
+        console.log(`Downloading HTML: ${inputHtmlPath}`);
+        const [content] = await storage.bucket(bucketName).file(inputHtmlPath).download();
+        await page.setContent(content.toString(), { waitUntil: 'networkidle0' });
 
         const pdfPath = `/tmp/report_${userId}.pdf`;
         await page.pdf({ path: pdfPath, format: 'A4', printBackground: true });
@@ -47,7 +70,7 @@ async function run() {
 
         // CALLBACK TO LARAVEL
         // This triggers the notification system you already have
-        await axios.post('https://your-laravel-domain.com/api/reports/callback', {
+        await axios.post('https://khalifah.cloud/api/reports/callback', {
             user_id: userId,
             file_name: finalPdfName,
             status: 'success'
