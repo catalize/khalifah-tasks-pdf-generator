@@ -32,7 +32,8 @@ async function run() {
 
         page.on('request', async (request) => {
             const url = request.url();
-
+            
+            // CASE 1: Google Cloud Storage Internal Links
             if (url.startsWith('gs://')) {
                 totalImages++;
                 try {
@@ -55,12 +56,22 @@ async function run() {
                         contentType: mimeType,
                         body: buffer
                 });
-            } catch (err) {
-                failedImages++;
-                console.error(`Failed to fetch GS image: ${url}`, err);
-                request.abort();
+                } catch (err) {
+                    failedImages++;
+                    console.error(`Failed to fetch GS image: ${url}`, err);
+                    request.abort();
+                }
+            } // CASE 2: External HTTP Links (Your Logo & Ngrok Assets)
+            else if (url.startsWith('http')) {
+                const headers = {
+                    ...request.headers(),
+                    'ngrok-skip-browser-warning': 'true'
+                };
+                
+                request.continue({ headers });
             }
-            } else {
+            // CASE 3: Data URLs or other protocols
+            else {
                 request.continue();
             }
         });
