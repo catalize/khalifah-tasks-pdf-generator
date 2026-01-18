@@ -127,6 +127,8 @@ async function run() {
         const callbackUrl = process.env.CALLBACK_URL;
         const internalSecret = process.env.INTERNAL_SECRET;
 
+        console.log(`Sending callback with secret: ${internalSecret ? 'Present' : 'MISSING'}`);
+
         if (callbackUrl) {
             console.log(`🔗 Notifying Laravel at: ${callbackUrl}`);
             try {
@@ -138,7 +140,8 @@ async function run() {
                     headers: { 
                         'X-Internal-Secret': internalSecret,
                         'ngrok-skip-browser-warning': 'true',
-                        'Content-Type': 'application/json'
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
                     }
                 });
                 console.log("✅ Callback successful");
